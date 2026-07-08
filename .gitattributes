@@ -1,0 +1,9 @@
+# 改行コードの正規化のみ（Git LFSは未使用）。
+# 将来 git-lfs を導入したら、下記コメントを有効化して素材をLFS管理に移行できる。
+# remotion/public/bg/*.mp4 filter=lfs diff=lfs merge=lfs -text
+# remotion/public/se/*.mp3 filter=lfs diff=lfs merge=lfs -text
+# remotion/public/irasutoya/*.png filter=lfs diff=lfs merge=lfs -text
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.sh text eol=lf

@@ -1,0 +1,218 @@
+<title>掲示板レイアウト プレビュー — 2chFXスレ</title>
+<style>
+  :root {
+    --bg: #f3f6f1; --panel: #ffffff; --ink: #191d18; --muted: #5c6659;
+    --line: #dde3d8; --accent: #2f6b3a;
+    --font: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #12160f; --panel: #1b211a; --ink: #e8ede4; --muted: #97a291;
+      --line: #2b332a; --accent: #5aa869; }
+  }
+  :root[data-theme="light"] { --bg: #f3f6f1; --panel: #ffffff; --ink: #191d18; --muted: #5c6659; --line: #dde3d8; --accent: #2f6b3a; }
+  :root[data-theme="dark"]  { --bg: #12160f; --panel: #1b211a; --ink: #e8ede4; --muted: #97a291; --line: #2b332a; --accent: #5aa869; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 72px; }
+  .eyebrow { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin: 0 0 8px; }
+  h1 { font-size: clamp(24px, 3.4vw, 34px); line-height: 1.2; margin: 0 0 10px; text-wrap: balance; }
+  .lead { color: var(--muted); margin: 0 0 24px; max-width: 62ch; }
+
+  /* ===== 動画フレーム（Board.tsx を忠実再現・16:9固定） ===== */
+  .stage { container-type: inline-size; position: relative; width: 100%; aspect-ratio: 16/9;
+    border-radius: 10px; overflow: hidden; box-shadow: 0 14px 40px rgba(0,0,0,.28);
+    font-family: sans-serif; user-select: none; }
+
+  /* 背景：フリー動画素材ループの代役（海→砂浜の動くグラデ） */
+  .bgvid { position: absolute; inset: 0;
+    background:
+      linear-gradient(180deg,#3f7fb5 0%,#5fa3c9 34%,#8fc4d8 52%,#cdb98a 68%,#d9c79c 100%);
+  }
+  .bgvid::after { content:""; position:absolute; inset:0;
+    background: repeating-linear-gradient(100deg, rgba(255,255,255,.10) 0 14px, rgba(255,255,255,0) 14px 40px);
+    animation: drift 9s linear infinite; }
+  @keyframes drift { from { transform: translateX(0);} to { transform: translateX(-40cqw);} }
+  @media (prefers-reduced-motion: reduce){ .bgvid::after{ animation: none; } }
+  .vidbadge { position:absolute; left:1.2cqw; bottom:1.2cqw; z-index:5;
+    background: rgba(0,0,0,.5); color:#fff; font-size:1cqw; padding:.4cqw .8cqw; border-radius:.5cqw; }
+
+  /* 右上スレタイ黒帯（左端斜めカット） */
+  .titlebar { position:absolute; top:0; right:0; max-width:66cqw; z-index:4;
+    background: rgba(18,22,30,.9); color:#fff; font-size:1.9cqw; font-weight:700; white-space:nowrap;
+    padding:1.1cqw 2cqw 1.1cqw 3cqw; clip-path: polygon(2.4cqw 0, 100% 0, 100% 100%, 0 100%); }
+
+  /* 右：いらすとや素材（SVGダミー） */
+  .chara { position:absolute; right:4cqw; bottom:0; height:37cqw; z-index:3;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-end; }
+  .chara svg { height:32cqw; width:auto; filter: drop-shadow(0 .4cqw .8cqw rgba(0,0,0,.25)); }
+  .chara .clabel { margin-top:.4cqw; background:rgba(0,0,0,.45); color:#fff; font-size:.95cqw;
+    padding:.3cqw .7cqw; border-radius:.5cqw; }
+
+  /* 左：レス（上から下・左寄せ・名前なし・話者=枠色） */
+  .stack { position:absolute; left:3cqw; top:5cqw; width:48cqw; z-index:4;
+    display:flex; flex-direction:column; gap:1.2cqw; align-items:flex-start; }
+  .bub { background:#fff; border-radius:1cqw; padding:1.2cqw 1.6cqw;
+    border:.34cqw solid #333; box-shadow:0 .35cqw .9cqw rgba(0,0,0,.28);
+    font-size:2.1cqw; font-weight:700; line-height:1.36; color:#111; }
+  .bub.enter { animation: pop .28s ease; }
+  @keyframes pop { from{ transform: translateY(1cqw) scale(.98); opacity:.4;} to{ transform:none; opacity:1;} }
+  @media (prefers-reduced-motion: reduce){ .bub.enter{ animation:none; } }
+
+  /* 解説グラフ差込 */
+  .goverlay { position:absolute; inset:0; z-index:6; background:rgba(12,20,14,.93);
+    display:flex; align-items:center; justify-content:center; }
+  .gcard { width:78cqw; background:#fff; border-radius:1cqw; padding:1.3cqw 1.6cqw 1.6cqw; }
+  .gcard .gt { text-align:center; font-size:1.9cqw; font-weight:700; color:#111; margin-bottom:1cqw; }
+  .chart { display:flex; align-items:flex-end; gap:8cqw; height:26cqw; padding:0 10cqw 1.4cqw;
+    border-bottom:.2cqw solid #ccc; position:relative; }
+  .ylab { position:absolute; left:.4cqw; top:32%; font-size:1.05cqw; color:#555; writing-mode:vertical-rl; }
+  .bar { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
+  .bar b { font-size:1.7cqw; color:#111; margin-bottom:.4cqw; }
+  .bar i { width:100%; border-radius:.3cqw .3cqw 0 0; }
+  .bar span { margin-top:.5cqw; font-size:1.4cqw; color:#333; font-style:normal; }
+
+  /* ===== コントロール ===== */
+  .controls { display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin:18px 0 6px; }
+  .btn { font:inherit; font-size:14px; font-weight:600; padding:9px 16px; cursor:pointer;
+    border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--ink); }
+  .btn:hover { border-color: var(--accent); }
+  .btn.on { background: var(--accent); color:#fff; border-color: var(--accent); }
+  .btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  input[type=range]{ flex:1; min-width:200px; accent-color: var(--accent); }
+  .pos { font-variant-numeric: tabular-nums; color: var(--muted); font-size:14px; min-width:84px; }
+  .now { font-size:14px; color: var(--muted); margin:0 0 26px; } .now b { color: var(--ink); }
+  .legend { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; margin:8px 0 26px; padding:0; list-style:none; }
+  .legend li { display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--panel); border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  .swatch { width:16px; height:16px; border-radius:4px; border:3px solid #333; flex:none; background:#fff; }
+  .legend .role { font-weight:700; } .legend .vv { color:var(--muted); margin-left:auto; font-size:12px; }
+  .notes { border-top:1px solid var(--line); padding-top:20px; margin-top:8px; }
+  .notes h2 { font-size:15px; letter-spacing:.04em; margin:0 0 12px; }
+  .notes ul { margin:0; padding-left:18px; color:var(--muted); font-size:14px; }
+  .notes li { margin-bottom:7px; } .notes b { color: var(--ink); }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Board.tsx · Live Preview v2</p>
+  <h1>掲示板レイアウト プレビュー（本家構図版）</h1>
+  <p class="lead">ご提示の理想構図に合わせて再構成しました。背景＝フリー動画素材のループ、右上＝スレタイ黒帯、左＝上から積む名前なしレス（話者は枠の色で識別）、右＝いらすとや素材の合成。スライダーで送り、「解説グラフ」で差込を確認できます。背景動画と人物はダミー表現です。</p>
+
+  <div class="stage" id="stage">
+    <div class="bgvid"></div>
+    <div class="vidbadge">▶ フリー動画素材（ループ）</div>
+    <div class="titlebar" id="titlebar"></div>
+    <div class="chara" id="chara"></div>
+    <div class="stack" id="stack"></div>
+    <div id="overlay"></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="prev">◀ 前</button>
+    <button class="btn" id="next">次 ▶</button>
+    <input type="range" id="scrub" min="0" value="0" step="1" aria-label="レス送り">
+    <span class="pos" id="pos"></span>
+    <button class="btn" id="gtoggle">解説グラフ</button>
+  </div>
+  <p class="now" id="now"></p>
+
+  <ul class="legend" id="legend"></ul>
+
+  <div class="notes">
+    <h2>本家構図に合わせた要点</h2>
+    <ul>
+      <li><b>背景はフリー動画素材をループ再生</b>（Pixabay等の海・空・都会など）。<code>public/bg/ocean.mp4</code> を差し替えるだけ。</li>
+      <li><b>スレタイは右上の黒帯</b>（左端を斜めカット）。台本冒頭の <code>#</code> タイトルから自動で流し込み。</li>
+      <li><b>レスは左上から縦積み・名前なし</b>。<b>話者は吹き出しの枠色</b>で識別（本家と同じ設計）。</li>
+      <li><b>右にいらすとや素材を1点合成</b>。話者ごとの既定素材＋台本の <code>[IMG:キー]</code> で場面ごとに差し替え可能。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  // 話者 → 枠色・いらすとやダミーの色/ポーズ
+  const CHARA = {
+    "ずんだもん":   { role:"ワイ",       color:"#c26a00", shirt:"#4a90d9", pose:"pc"    },
+    "玄野武宏":     { role:"先輩",       color:"#b3261e", shirt:"#5a6b7a", pose:"talk"  },
+    "青山龍星":     { role:"逆張りニキ", color:"#1b8a3a", shirt:"#e0803a", pose:"point" },
+    "九州そら":     { role:"冷静ニキ",   color:"#0b63c4", shirt:"#c94f8a", pose:"talk"  },
+    "春日部つむぎ": { role:"新人ニキ",   color:"#8a1b7a", shirt:"#6aa84f", pose:"hatena"},
+    "四国めたん":   { role:"ナレーター", color:"#37507a", shirt:"#8a8f98", pose:"narr"  },
+  };
+  const TITLE = "FXで退場する奴、結局“ロット”で全部説明つくって話";
+  const SEGS = [
+    { name:"四国めたん", text:"今回ご紹介するスレッドはこちら。「FXで退場する奴、結局ロットで全部説明つくって話」。" },
+    { name:"ずんだもん", text:"また一人、退場報告してたわ。含み損に耐えきれず全ロット投げたらしい。" },
+    { name:"玄野武宏",   text:"退場する奴、ほぼ全員おなじ原因やで。ロットがデカすぎるだけや。" },
+    { name:"青山龍星",   text:"いや、ロット小さかったら一生小銭やろ。どうせやるなら攻めなあかん。" },
+    { name:"九州そら",   text:"その「どうせやるなら」が一番危ない。眠れん時点でもう負けてるんよ。" },
+    { name:"ずんだもん", text:"耳痛いわ…。ワイも調子乗ってロット上げた翌週、指標で全部溶かしたわ。" },
+    { name:"春日部つむぎ", text:"そもそも適正ロットって、どう決めるんですか？" },
+    { name:"九州そら",   text:"1回の取引で失っていい額を、証拠金の2%以内に抑える。生き残りはだいたいこれ。", graph:true },
+    { name:"四国めたん", text:"2%以内なら20連敗でも資金は約67%残ります。ロットが生存率を決めるのです。", graph:true },
+  ];
+
+  const $ = (id)=>document.getElementById(id);
+  function el(tag, attrs, ...kids){ const n=document.createElement(tag);
+    if(attrs) for(const k in attrs){ if(k==="style")n.style.cssText=attrs[k]; else if(k==="class")n.className=attrs[k]; else n.setAttribute(k,attrs[k]); }
+    for(const c of kids) if(c!=null) n.append(c); return n; }
+  const SVGNS="http://www.w3.org/2000/svg";
+  function s(tag, attrs, ...kids){ const n=document.createElementNS(SVGNS,tag);
+    if(attrs) for(const k in attrs) n.setAttribute(k,attrs[k]);
+    for(const c of kids) if(c!=null) n.append(c); return n; }
+
+  // いらすとや風ダミー人物（フラットSVG）
+  function charaSVG(c){
+    const g = s("svg",{viewBox:"0 0 200 260"});
+    g.append(
+      s("ellipse",{cx:100,cy:250,rx:70,ry:12,fill:"rgba(0,0,0,.15)"}),
+      s("path",{d:"M40 260 Q40 170 100 170 Q160 170 160 260 Z", fill:c.shirt}),       // 体
+      s("circle",{cx:100,cy:110,r:52, fill:"#f7d7b5"}),                                // 顔
+      s("path",{d:"M48 96 Q52 44 100 46 Q150 46 152 96 Q140 70 100 72 Q60 70 48 96 Z", fill:"#2b2b2b"}), // 髪
+      s("circle",{cx:82,cy:112,r:5, fill:"#222"}), s("circle",{cx:118,cy:112,r:5, fill:"#222"}),
+      s("path",{d:"M88 132 Q100 140 112 132", stroke:"#c8896a", "stroke-width":3, fill:"none","stroke-linecap":"round"})
+    );
+    if(c.pose==="pc") g.append(s("rect",{x:52,y:214,width:96,height:60,rx:6, fill:"#c9ced3"}), s("rect",{x:60,y:220,width:80,height:44,rx:3, fill:"#8b9199"}));
+    if(c.pose==="point") g.append(s("path",{d:"M150 190 L188 150", stroke:c.shirt,"stroke-width":18,fill:"none","stroke-linecap":"round"}), s("circle",{cx:190,cy:146,r:12,fill:"#f7d7b5"}));
+    if(c.pose==="hatena") g.append(s("text",{x:150,y:70,"font-size":48,"font-weight":"700",fill:"#e0803a"},"？"));
+    if(c.pose==="talk") g.append(s("text",{x:150,y:80,"font-size":40,fill:"#fff","font-weight":"700"},"！"));
+    return g;
+  }
+
+  let cur=0, gForce=null;
+  const scrub=$("scrub"); scrub.max=SEGS.length-1;
+  const graphShown=(i)=> gForce!==null ? gForce : !!SEGS[i].graph;
+
+  function render(anim){
+    const seg=SEGS[cur], c=CHARA[seg.name];
+    $("titlebar").textContent = TITLE;
+    // いらすとや
+    $("chara").replaceChildren(charaSVG(c), el("div",{class:"clabel"}, "いらすとや：" + c.role));
+    // レス（直近3件・上から）
+    const from=Math.max(0,cur-2);
+    $("stack").replaceChildren(...SEGS.slice(from,cur+1).map((sg,idx)=>{
+      const isCur=(from+idx)===cur, cc=CHARA[sg.name];
+      return el("div",{ class:"bub"+(isCur&&anim?" enter":""), style:`border-color:${cc.color}` }, sg.text);
+    }));
+    // グラフ
+    const ov=$("overlay");
+    if(graphShown(cur)){
+      const bar=(l,v,col)=> el("div",{class:"bar"}, el("b",null,v+"%"), el("i",{style:`height:${v}%;background:${col}`}), el("span",null,l));
+      ov.replaceChildren(el("div",{class:"goverlay"}, el("div",{class:"gcard"},
+        el("div",{class:"gt"},"リスク%の違いで生存率はこれだけ変わる"),
+        el("div",{class:"chart"}, el("span",{class:"ylab"},"20連敗後の資金残存率(%)"),
+          bar("2%リスク",67,"#2e7d32"), bar("10%リスク",44,"#c62828")))));
+    } else ov.replaceChildren();
+    // コントロール
+    scrub.value=cur; $("pos").textContent=`${cur+1} / ${SEGS.length}`;
+    $("now").replaceChildren("現在の発話： ", el("b",null,c.role), `（VOICEVOX: ${seg.name}）`);
+    $("gtoggle").classList.toggle("on", graphShown(cur));
+  }
+  $("prev").onclick=()=>{ cur=Math.max(0,cur-1); gForce=null; render(true); };
+  $("next").onclick=()=>{ cur=Math.min(SEGS.length-1,cur+1); gForce=null; render(true); };
+  scrub.oninput=()=>{ cur=+scrub.value; gForce=null; render(false); };
+  $("gtoggle").onclick=()=>{ gForce=!graphShown(cur); render(false); };
+
+  $("legend").replaceChildren(...Object.entries(CHARA).map(([vv,c])=>
+    el("li",null, el("span",{class:"swatch",style:`border-color:${c.color}`}),
+      el("span",{class:"role"},c.role), el("span",{class:"vv"},vv))));
+  render(false);
+</script>

@@ -1,0 +1,15 @@
+# 生成物・依存（コミット不要）
+out/
+remotion/node_modules/
+remotion/public/ep*/
+__pycache__/
+*.pyc
+
+# 秘密情報（絶対にコミットしない）
+build/token.json
+build/client_secret.json
+
+# 重い背景動画は自動ローテ対象外。LFS帯域節約のため除外（使うなら手動でLFS追加）
+remotion/public/bg/ocean.mp4
+remotion/public/bg/nature.mp4
+remotion/public/bg/grandfather.mp4

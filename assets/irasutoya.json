@@ -1,0 +1,37 @@
+{
+  "_readme": "いらすとや素材の台帳。key=ファイル名(拡張子なし)。PNGは remotion/public/irasutoya/<key>.png に透過で置く。descはLLMの選択用、tagsは検索用。ここに載っているkeyだけを台本の[IMG:key]で使える。",
+  "assets": [
+    { "key": "pose_ochikomu_businessman",   "file": "pose_ochikomu_businessman.png",   "desc": "落ち込むビジネスマン（損失・含み損）",              "tags": ["ワイ","損失","含み損","失敗","退場"] },
+    { "key": "megane_hikaru_man",            "file": "megane_hikaru_man.png",            "desc": "メガネが光る男性（冷静に見抜くベテラン）",          "tags": ["先輩","冷静","見抜く","ベテラン","理屈"] },
+    { "key": "chance_tsukamu_man",           "file": "chance_tsukamu_man.png",           "desc": "チャンスを掴む男性（攻めの強気・好機）",            "tags": ["逆張り","攻め","強気","好機"] },
+    { "key": "point_katen_man",              "file": "point_katen_man.png",              "desc": "指をさして注意・ポイントを示す男性（解説・警告）",  "tags": ["冷静","解説","警告","重要","注意"] },
+    { "key": "kinchou_man_walk",             "file": "kinchou_man_walk.png",             "desc": "緊張して歩く男性（不安・ビビり）",                  "tags": ["新人","不安","メンタル","ビビり"] },
+    { "key": "niyakeru_takuramu_ayashii_man","file": "niyakeru_takuramu_ayashii_man.png","desc": "ニヤけて企む怪しい男性（自信過剰・煽り）",          "tags": ["煽り","自信過剰","強気","油断"] },
+    { "key": "kaisya_tousan_man",            "file": "kaisya_tousan_man.png",            "desc": "会社倒産で崩れ落ちる男性（借金・破産・退場）",      "tags": ["借金","追証","破産","退場","レバレッジ"] },
+    { "key": "yopparai_businessman",         "file": "yopparai_businessman.png",         "desc": "酔っ払いビジネスマン（調子に乗る・気の緩み）",      "tags": ["調子に乗る","油断","気の緩み"] },
+    { "key": "run_man_suit5",                "file": "run_man_suit5.png",                "desc": "全力で走るスーツ男性（狼狽・逃げる・狼狽売り）",    "tags": ["狼狽","逃げる","撤退","狼狽売り"] },
+    { "key": "money_toushi_seikou",          "file": "money_toushi_seikou.png",          "desc": "投資成功でお金を得た様子（利益・勝ち）",            "tags": ["利益","勝ち","含み益","成功"] },
+
+    { "key": "business_man_angry",           "file": "business_man_angry.png",           "desc": "怒るビジネスマン（ブチ切れ・煽り返し）",            "tags": ["怒り","煽り","ブチ切れ","レスバ"] },
+    { "key": "business_man_cry",             "file": "business_man_cry.png",             "desc": "泣くビジネスマン（悔し泣き・損失）",                "tags": ["損失","悔し泣き","退場","含み損"] },
+    { "key": "business_man_laugh",           "file": "business_man_laugh.png",           "desc": "高笑いするビジネスマン（ドヤ・勝ち誇り）",          "tags": ["勝ち","ドヤ","煽り","高笑い"] },
+    { "key": "business_man_shock",           "file": "business_man_shock.png",           "desc": "ショックを受けるビジネスマン（暴落・衝撃）",        "tags": ["暴落","衝撃","狼狽","びっくり"] },
+    { "key": "kabu_chart_man",               "file": "kabu_chart_man.png",               "desc": "チャートを見て考える男性（分析・相場観察）",        "tags": ["チャート","分析","相場","検討"] },
+    { "key": "kabu_chart_man_cry",           "file": "kabu_chart_man_cry.png",           "desc": "下落チャートで泣く男性（暴落・含み損）",            "tags": ["暴落","含み損","狼狽","下落"] },
+    { "key": "kabu_chart_man_happy",         "file": "kabu_chart_man_happy.png",         "desc": "上昇チャートで喜ぶ男性（含み益・値上がり）",        "tags": ["上昇","含み益","勝ち","高値"] },
+    { "key": "money_kabu_panic",             "file": "money_kabu_panic.png",             "desc": "株価暴落でパニックの男性（狼狽・急落）",            "tags": ["暴落","パニック","狼狽","急落"] },
+    { "key": "money_megakuramu_man",         "file": "money_megakuramu_man.png",         "desc": "お金に目が眩む男性（強欲・一攫千金）",              "tags": ["強欲","欲","一攫千金","高値掴み"] },
+    { "key": "money_okanemochi",             "file": "money_okanemochi.png",             "desc": "お金持ちのおじさん（富・成功・億り人）",            "tags": ["富","成功","億り人","金持ち"] },
+    { "key": "money_joucho_man",             "file": "money_joucho_man.png",             "desc": "お金の増減に一喜一憂する情緒不安定な男性",          "tags": ["メンタル","一喜一憂","不安","値動き"] },
+    { "key": "mark_yen_okaikei",             "file": "mark_yen_okaikei.png",             "desc": "円マーク・お金/会計のイメージ",                    "tags": ["円","お金","会計","日本円"] },
+    { "key": "kabu_chart_man_2",             "file": "kabu_chart_man.png",               "desc": "（別名）チャートを見る男性",                        "tags": ["チャート","相場"] },
+    { "key": "man_pc",                       "file": "man_pc.png",                       "desc": "パソコンに向かう若い男性（作業・トレード）",        "tags": ["作業","トレード","通常"] },
+    { "key": "man_yaruki",                   "file": "man_yaruki.png",                   "desc": "やる気に燃える男性（意欲・強気）",                  "tags": ["強気","攻め","意欲"] },
+    { "key": "man_hatena",                   "file": "man_hatena.png",                   "desc": "はてなを浮かべる男性（疑問・混乱）",                "tags": ["新人","疑問","混乱","初心者"] },
+    { "key": "ojisan_talk",                  "file": "ojisan_talk.png",                  "desc": "落ち着いて語るおじさん（先輩・助言）",              "tags": ["先輩","助言","ベテラン"] },
+    { "key": "woman_setsumei",               "file": "woman_setsumei.png",               "desc": "冷静に説明する女性（解説役）",                      "tags": ["冷静","説明","解説"] },
+    { "key": "narrator",                     "file": "narrator.png",                     "desc": "ナレーション向けの中立的な人物",                    "tags": ["導入","解説","中立"] },
+    { "key": "chikyu_issyuu_travel",         "file": "chikyu_issyuu_travel.png",         "desc": "世界一周旅行（自由・FIRE・夢）",                    "tags": ["FIRE","自由","夢","旅行"] },
+    { "key": "family_airplane_travel",       "file": "family_airplane_travel.png",       "desc": "家族で飛行機旅行（豊かな生活・ゆとり）",            "tags": ["家族","豊か","ゆとり","旅行"] }
+  ]
+}
