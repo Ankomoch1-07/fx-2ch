@@ -5,8 +5,16 @@
 使い方: python3 build/graph.py scripts/ep01.txt
 """
 import re, sys, os
+import matplotlib
+matplotlib.use("Agg")
+try:
+    import japanize_matplotlib  # noqa: F401  日本語フォント（ローカルMac等）
+except Exception:
+    # japanize_matplotlibが使えない環境（例: Python3.12でdistutils無し）は
+    # システムの日本語フォントにフォールバック（CIはfonts-noto-cjkを導入済み）
+    matplotlib.rcParams["font.family"] = [
+        "Noto Sans CJK JP", "IPAexGothic", "Hiragino Sans", "TakaoPGothic", "sans-serif"]
 import matplotlib.pyplot as plt
-import japanize_matplotlib  # noqa: F401
 
 os.makedirs("out/graph", exist_ok=True)
 cues = [l.strip() for l in open(sys.argv[1], encoding="utf-8") if l.strip().startswith("[GRAPH")]
