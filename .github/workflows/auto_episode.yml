@@ -1,0 +1,132 @@
+name: Auto Episode（台本生成→レンダ 一気通貫）
+
+# 旬ネタ取得 → Claude Opus 4.8 で台本 → 機械QA(自動リライト) → VOICEVOX/グラフ →
+# Remotionレンダ → 台本コミット → 完成mp4をArtifactsへ、を全自動で回す（無人）。
+#   - 定期実行：週1（毎週火 06:00 JST）。毎日にしたい場合は下の cron を "0 21 * * *" に。
+#   - 手動実行も可：Actions → "Auto Episode" → Run workflow（ep名/中心軸を任意で指定）
+on:
+  schedule:
+    - cron: "0 21 * * 1"      # 毎週月 21:00 UTC = 火 06:00 JST（毎日は "0 21 * * *"）
+  workflow_dispatch:
+    inputs:
+      ep:
+        description: "エピソード名（省略時は ep<日付> を自動採番）"
+        required: false
+        default: ""
+      topic:
+        description: "中心軸を明示指定（省略時は自動でネタ取得）"
+        required: false
+        default: ""
+
+# 生成した台本をリポジトリにコミットするため書き込み権限が必要
+permissions:
+  contents: write
+
+# 入力はshellに直書きせず環境変数経由（インジェクション対策）
+env:
+  IN_EP: ${{ inputs.ep }}
+  TOPIC: ${{ inputs.topic }}
+
+jobs:
+  auto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    services:
+      voicevox:
+        image: voicevox/voicevox_engine:cpu-latest
+        ports:
+          - 50021:50021
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: ep名を決定（未指定なら ep<日付> で自動採番）＋検証
+        run: |
+          EP="$IN_EP"
+          [ -z "$EP" ] && EP="ep$(date -u +%Y%m%d)"
+          printf '%s' "$EP" | grep -Eq '^[A-Za-z0-9_-]+$' || { echo "invalid ep: $EP"; exit 1; }
+          echo "EP=$EP" >> "$GITHUB_ENV"
+          echo "生成エピソード: $EP"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python依存（anthropic含む）
+        run: python -m pip install --quiet anthropic requests matplotlib japanize-matplotlib
+
+      - name: Chrome(Remotion)＋日本語フォント
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+            libgbm1 libpango-1.0-0 libcairo2 libxdamage1 libxfixes3 \
+            libxrandr2 libxcomposite1 libxcursor1 libxi6 libxtst6 libglib2.0-0 \
+            fonts-noto-cjk
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
+
+      - name: VOICEVOX起動待ち
+        run: |
+          for i in $(seq 1 90); do
+            curl -sf http://localhost:50021/version && break || sleep 2
+          done
+          curl -sf http://localhost:50021/version
+
+      - name: Remotion依存
+        working-directory: remotion
+        run: npm ci
+
+      - name: 旬ネタ取得（best-effort＋週替りエバーグリーン）
+        run: python build/fetch_topics.py
+
+      - name: 台本生成（Opus 4.8 → 機械QA自動リライト）
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$TOPIC" ]; then
+            python build/generate_script.py --ep "$EP" --topic "$TOPIC"
+          else
+            python build/generate_script.py --ep "$EP"
+          fi
+
+      - name: 生成台本をコミット（記録＆再現用）
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "scripts/${EP}.txt"
+          git commit -m "auto: ${EP} 台本を自動生成" || echo "変更なし"
+          git push || echo "push skip（権限/競合）"
+
+      - name: 素材チェック＋QA（レンダ前ゲート）
+        run: |
+          python build/check_assets.py "scripts/${EP}.txt"
+          python build/qa.py "scripts/${EP}.txt" || echo "QA warnings（続行）"
+
+      - name: 音声・グラフ・タイムライン生成
+        env:
+          MPLBACKEND: Agg
+        run: |
+          python build/tts.py   "scripts/${EP}.txt"
+          python build/graph.py "scripts/${EP}.txt"
+          DEST="remotion/public/${EP}"
+          mkdir -p "$DEST/graph"
+          cp out/voice.wav out/timeline.json "$DEST/"
+          cp out/graph/*.png "$DEST/graph/" 2>/dev/null || true
+
+      - name: Remotionレンダ
+        working-directory: remotion
+        run: |
+          npx remotion render src/index.ts Main "../out/${EP}.mp4" \
+            --props="{\"ep\":\"${EP}\"}"
+
+      - name: 完成mp4をアップロード（成果物）
+        uses: actions/upload-artifact@v4
+        with:
+          name: "episode-mp4"
+          path: "out/*.mp4"
+          retention-days: 14
