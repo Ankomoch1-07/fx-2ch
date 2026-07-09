@@ -2,11 +2,11 @@ name: Auto Episode（台本生成→レンダ 一気通貫）
 
 # 旬ネタ取得 → Claude Opus 4.8 で台本 → 機械QA(自動リライト) → VOICEVOX/グラフ →
 # Remotionレンダ → 台本コミット → 完成mp4をArtifactsへ、を全自動で回す（無人）。
-#   - 定期実行：週1（毎週火 06:00 JST）。毎日にしたい場合は下の cron を "0 21 * * *" に。
+#   - 定期実行：週3（月・水・金の 13:00 JST）。頻度を変える時は下の cron を編集。
 #   - 手動実行も可：Actions → "Auto Episode" → Run workflow（ep名/中心軸を任意で指定）
 on:
   schedule:
-    - cron: "0 21 * * 1"      # 毎週月 21:00 UTC = 火 06:00 JST（毎日は "0 21 * * *"）
+    - cron: "0 4 * * 1,3,5"   # 04:00 UTC = 13:00 JST の 月(1)・水(3)・金(5)
   workflow_dispatch:
     inputs:
       ep:
