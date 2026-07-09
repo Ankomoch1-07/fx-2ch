@@ -180,7 +180,8 @@ se_files = glob.glob("remotion/public/se/*.mp3") + glob.glob("remotion/public/se
 se_path = ("se/" + os.path.basename(se_files[0])) if se_files else None
 
 # 背景動画：bg/ 内のmp4をエピソードごとにローテーション（本編とOPで別々）
-# 重い動画はレンダが激遅になるので、自動ローテ対象は30MB以下に限定（[BG:]指定なら重くても使える）
+# 重い動画(30MB超)はレンダが激遅なので自動ローテから除外＝運用上いっさい使わない。
+# [BG:]で明示指定しても、そのファイルが重い or 存在しない場合はローテへフォールバック（レンダを止めない）。
 MAXBG = 30 * 1024 * 1024
 _bg_all = sorted(glob.glob("remotion/public/bg/*.mp4"))
 bg_pool = [os.path.basename(p) for p in _bg_all if os.path.getsize(p) <= MAXBG]
@@ -189,10 +190,13 @@ _num = re.search(r"\d+", ep)
 _idx = int(_num.group()) if _num else abs(hash(ep)) % 997
 def pick_bg(offset, forced, fallback):
     if forced:
-        return forced if forced.startswith("bg/") else "bg/" + forced
-    if not bg_pool:
-        return fallback
-    return "bg/" + bg_pool[(_idx + offset) % len(bg_pool)]
+        f = forced if forced.startswith("bg/") else "bg/" + forced
+        # 軽くて実在するファイルだけ採用。重い/欠損なら黙ってローテへ。
+        if os.path.basename(f) in bg_pool and os.path.exists("remotion/public/" + f):
+            return f
+    if bg_pool:
+        return "bg/" + bg_pool[(_idx + offset) % len(bg_pool)]
+    return fallback
 main_bg = pick_bg(0, forced_bg, "bg/night.mp4")
 op_bg = pick_bg(1, forced_opbg, "bg/clowd.mp4")
 def bg_frames(bg):
