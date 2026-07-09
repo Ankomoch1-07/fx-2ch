@@ -3,12 +3,17 @@ import {
 } from "remotion";
 import React from "react";
 
-// 背景動画を実尺ぶんでループ（短い動画でも黒くならない）
+// 背景動画の不透明度（1.0=元動画のまま。下げるほど黒地に沈んで落ち着く／文字が読みやすい）
+const BG_OPACITY = 0.8;
+// 背景動画を実尺ぶんでループ（短い動画でも黒くならない）。黒地の上に不透明度をかけて少し沈ませる。
 const Bg: React.FC<{ src: string; frames?: number }> = ({ src, frames }) => (
-  <Loop durationInFrames={Math.max(1, frames ?? 300)}>
-    <OffthreadVideo src={staticFile(src)} muted
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-  </Loop>
+  <>
+    <AbsoluteFill style={{ background: "#000" }} />
+    <Loop durationInFrames={Math.max(1, frames ?? 300)}>
+      <OffthreadVideo src={staticFile(src)} muted
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: BG_OPACITY }} />
+    </Loop>
+  </>
 );
 
 export type Seg = {
