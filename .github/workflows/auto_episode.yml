@@ -30,7 +30,7 @@ env:
 jobs:
   auto:
     runs-on: ubuntu-latest
-    timeout-minutes: 200
+    timeout-minutes: 350      # 無料2コアは20分動画のレンダに5h近くかかる。ジョブ上限6h手前まで確保
     services:
       voicevox:
         image: voicevox/voicevox_engine:cpu-latest
