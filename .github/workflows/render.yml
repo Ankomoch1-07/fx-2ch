@@ -17,7 +17,7 @@ env:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 350
     services:
       voicevox:
         image: voicevox/voicevox_engine:cpu-latest
