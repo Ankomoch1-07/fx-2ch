@@ -1,0 +1,27 @@
+# 依存を自動で最新化する（Dependabot）。新バージョンが出ると自動でPRを作成。
+# PRを開いて "Merge" を押すだけで更新完了。まとめてグループ化しPR数を抑える。
+version: 2
+updates:
+  # GitHub Actions のバージョン（checkout / setup-node / setup-python / upload-artifact 等）
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(actions)"
+
+  # npm（Remotion 一式）。メジャー更新は破壊的変更があり得るので、内容を確認してからMergeする。
+  - package-ecosystem: "npm"
+    directory: "/remotion"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      remotion:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(npm)"
