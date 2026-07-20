@@ -28,11 +28,20 @@ def read(path):
         return f.read()
 
 
+def png_exists(key):
+    return os.path.exists(os.path.join(ROOT, "remotion/public/irasutoya", key + ".png"))
+
+
+def valid_keys():
+    """実PNGが存在するkeyだけ（Board.tsxは irasutoya/<key>.png を読むため）。"""
+    return {a["key"] for a in json.loads(read("assets/irasutoya.json"))["assets"] if png_exists(a["key"])}
+
+
 def build_system():
-    speakers = json.loads(read("build/speakers.json"))
     manifest = json.loads(read("assets/irasutoya.json"))
-    keys = [a["key"] for a in manifest["assets"]]
-    key_lines = "\n".join(f"  {a['key']} … {a['desc']}" for a in manifest["assets"])
+    # 実PNGのあるkeyだけ提示（別名/欠損keyを渡すとレンダで画像欠け→素材チェックで落ちる）
+    assets = [a for a in manifest["assets"] if png_exists(a["key"])]
+    key_lines = "\n".join(f"  {a['key']} … {a['desc']}" for a in assets)
     exemplar = read("scripts/ep02.txt")
 
     return f"""あなたは日本のYouTube「2ch お金スレ」系まとめ動画（FX・ゴールド版）の構成作家です。
@@ -119,18 +128,29 @@ def generate(client, system, user):
 
 
 def sanitize(text):
-    """コードフェンス除去・不正な[IMG:key]行の削除・タイトル行の担保。"""
+    """コードフェンス除去・実PNGの無いIMG/OPIMG/EDIMG keyの除去・タイトル行の担保。"""
     text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text.strip())
-    valid = {a["key"] for a in json.loads(read("assets/irasutoya.json"))["assets"]}
+    valid = valid_keys()                  # 実PNGのあるkeyのみ有効
     out, dropped = [], []
     for ln in text.splitlines():
         m = re.match(r"\s*\[IMG:\s*([\w-]+)\s*\]\s*$", ln)
-        if m and m.group(1) not in valid:
-            dropped.append(m.group(1))
-            continue                      # 未知keyのIMG行は落とす（stickyなので直前画像が継続）
+        if m:
+            if m.group(1) in valid:
+                out.append(ln.rstrip())
+            else:
+                dropped.append(m.group(1))   # 無効keyのIMG行は落とす（stickyで直前画像が継続）
+            continue
+        mo = re.match(r"\s*\[(OPIMG|EDIMG):\s*(.+?)\]\s*$", ln)
+        if mo:                            # OP/EDの画像リストも有効keyだけに間引く
+            items = [k.strip() for k in mo.group(2).split(",") if k.strip()]
+            kept = [k for k in items if k in valid]
+            dropped += [k for k in items if k not in valid]
+            if kept:
+                out.append(f"[{mo.group(1)}: {', '.join(kept)}]")
+            continue                      # 全滅なら行ごと落とす（画像が減るだけ）
         out.append(ln.rstrip())
     if dropped:
-        print(f"  ! 未知IMG keyを{len(dropped)}行削除: {sorted(set(dropped))}")
+        print(f"  ! 無効(PNG無し)keyを{len(dropped)}箇所除去: {sorted(set(dropped))}")
     # 先頭が # でなければタイトル行を補う（保険）
     body = "\n".join(out).strip()
     if not body.lstrip().startswith("#"):
