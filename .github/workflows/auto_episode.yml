@@ -57,8 +57,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Python依存（anthropic含む）
-        run: python -m pip install --quiet anthropic requests matplotlib japanize-matplotlib
+      - name: Python依存（anthropic/Pillow/Gemini含む）
+        run: python -m pip install --quiet anthropic requests matplotlib japanize-matplotlib pillow google-genai
 
       - name: Chrome(Remotion)＋日本語フォント
         run: |
@@ -101,6 +101,20 @@ jobs:
           git add "scripts/${EP}.txt"
           git commit -m "auto: ${EP} 台本を自動生成" || echo "変更なし"
           git push || echo "push skip（権限/競合）"
+
+      - name: サムネ生成（Opus4.8で文言＋Geminiで背景。中央は空ける）
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python build/gen_thumbnail.py --ep "$EP" || echo "サムネ生成失敗（続行）"
+
+      - name: サムネをアップロード（レンダ前に確保）
+        uses: actions/upload-artifact@v4
+        with:
+          name: "thumbnail"
+          path: "out/*_thumb.png"
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: 素材チェック＋QA（レンダ前ゲート）
         run: |
