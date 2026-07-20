@@ -105,20 +105,37 @@ def gen_copy(title, topics):
 def gemini_bg(prompt):
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
+        print("  ! GEMINI_API_KEY 未設定 → サンバースト背景で代替（Geminiは使われません）")
         return None
+    import io
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=key)
+    model = os.environ.get("GEMINI_IMAGE_MODEL", "imagen-4.0-generate-001")
+    # ① Imagen系（text-to-image専用API）
     try:
-        from google import genai
-        client = genai.Client(api_key=key)
-        model = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
-        resp = client.models.generate_content(model=model, contents=[prompt])
+        resp = client.models.generate_images(
+            model=model, prompt=prompt,
+            config=types.GenerateImagesConfig(number_of_images=1, aspect_ratio="16:9"),
+        )
+        data = getattr(resp.generated_images[0].image, "image_bytes", None)
+        if data:
+            print(f"  Gemini背景を生成しました（model={model}）")
+            return fit_cover(Image.open(io.BytesIO(data)).convert("RGB"), W, H)
+    except Exception as e:
+        print(f"  ! generate_images 失敗（{model}）: {e}")
+    # ② gemini-*-image 系（generate_contentで画像を返すモデル）にフォールバック
+    try:
+        gmodel = os.environ.get("GEMINI_CONTENT_MODEL", "gemini-3-pro-image-preview")
+        resp = client.models.generate_content(model=gmodel, contents=[prompt])
         for part in resp.candidates[0].content.parts:
             inline = getattr(part, "inline_data", None)
             if inline and getattr(inline, "data", None):
-                import io
-                img = Image.open(io.BytesIO(inline.data)).convert("RGB")
-                return fit_cover(img, W, H)
+                print(f"  Gemini背景を生成しました（model={gmodel}）")
+                return fit_cover(Image.open(io.BytesIO(inline.data)).convert("RGB"), W, H)
     except Exception as e:
-        print(f"  ! Gemini背景生成に失敗（サンバーストで代替）: {e}")
+        print(f"  ! generate_content 失敗（{gmodel}）: {e}")
+    print("  ! Geminiで画像を取得できず → サンバースト背景で代替")
     return None
 
 
