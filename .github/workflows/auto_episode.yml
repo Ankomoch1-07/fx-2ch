@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: ep名を決定（未指定なら ep<日付> で自動採番）＋検証
         run: |
@@ -49,11 +49,11 @@ jobs:
           echo "EP=$EP" >> "$GITHUB_ENV"
           echo "生成エピソード: $EP"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -125,7 +125,7 @@ jobs:
             --props="{\"ep\":\"${EP}\"}"
 
       - name: 完成mp4をアップロード（成果物）
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: "episode-mp4"
           path: "out/*.mp4"
