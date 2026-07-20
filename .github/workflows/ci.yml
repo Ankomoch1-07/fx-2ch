@@ -1,0 +1,57 @@
+name: CI（PR検証＋Dependabot自動マージ）
+
+# PRのたびに「壊れていないか」を軽く検証（フルレンダはしない＝数分で終わる）。
+# 検証を通ったDependabotのPRのうち、パッチ/マイナー更新だけ自動マージ。
+# メジャー更新（破壊的変更の可能性）はマージせず残し、人が確認してからMerge。
+on:
+  pull_request:
+
+jobs:
+  # --- 軽量検証：Python構文/QA/素材チェック＋Remotionのビルド（バンドル）が通るか ---
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python構文＋素材チェック＋QA（既存の合格台本ep02で検証）
+        run: |
+          python -m py_compile build/*.py
+          python build/check_assets.py scripts/ep02.txt
+          python build/qa.py scripts/ep02.txt || echo "QA warnings（PR検証では非致命）"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Remotion依存＋ビルド検証（webpackバンドル。レンダはしない）
+        working-directory: remotion
+        run: |
+          npm ci
+          npx remotion bundle src/index.ts
+
+  # --- Dependabotのパッチ/マイナーPRを自動マージ（check成功が前提） ---
+  automerge:
+    needs: check
+    if: ${{ github.actor == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: 更新種別を取得
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+
+      - name: パッチ/マイナーは自動マージ（メジャーは残して手動確認）
+        if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' }}
+        run: gh pr merge --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
