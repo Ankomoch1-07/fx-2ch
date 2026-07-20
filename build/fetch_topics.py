@@ -31,10 +31,12 @@ ROTATION = [
     "金の出口・利確・リバランス｜いつ売る｜比率を保つだけの運用",
 ]
 
-iso = datetime.date.today().isocalendar()
-week = iso[1]
-year = iso[0]
-base = ROTATION[week % len(ROTATION)]
+# 中心軸は「既存台本の本数」で回す。実行ごとに必ず+1進むので、14軸を順に全部使い切り、
+# 14本先まで同じネタは出ない（週番号だと同週の月水金が全部同じ／日付だと偶奇で半分しか使われない問題を回避）。
+import glob
+today = datetime.date.today()
+n_scripts = len(glob.glob("scripts/*.txt"))
+base = ROTATION[n_scripts % len(ROTATION)]
 
 # --- best-effort で実データも拾う（失敗OK） --------------------------------
 live = []
@@ -84,7 +86,7 @@ for t in live:
         live_uniq.append(t)
 
 # --- 出力 ------------------------------------------------------------------
-lines = [f"【今週の中心軸（{year}年 第{week}週）】", base, ""]
+lines = [f"【今回の中心軸（{today.isoformat()}）】", base, ""]
 if live_uniq:
     lines.append("【実在の旬スレタイ（参考・論点/空気感のみ借用。本文コピー禁止）】")
     lines += [f"- {t}" for t in live_uniq[:12]]
@@ -93,4 +95,4 @@ else:
 
 open("out/topics.txt", "w", encoding="utf-8").write("\n".join(lines) + "\n")
 print("\n".join(lines))
-print(f"\n-> out/topics.txt （中心軸=第{week}週ローテ / 実データ{len(live_uniq)}件）")
+print(f"\n-> out/topics.txt （中心軸=日付ローテ {today.isoformat()} / 実データ{len(live_uniq)}件）")
