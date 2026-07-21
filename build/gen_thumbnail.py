@@ -1,27 +1,31 @@
 """
-サムネ自動生成。台本のタイトル/テーマから、reference_money_thumbnail_template の型で
-  ① Opus 4.8 が文言(上下見出し・吹き出し4つ・NG語伏せ字)＋Gemini背景プロンプトを生成
-  ② 背景ビジュアルを生成：GEMINI_API_KEY があれば Gemini、無ければ Pillow でサンバーストを自前描画
-  ③ Pillow で見出し(縦グラデ＋白フチ＋影)・四隅の吹き出しを合成。中央 約430x430 は空ける
-     （中央のいらすとや人物は後で手動で載せる運用）
+サムネ自動生成。reference_money_thumbnail_template ＋ 参照サムネ構図を忠実に再現（文字以外）。
+  ① Opus 4.8 が文言(上下見出し・●●伏せ字・吹き出し4つ＋強調語色・NG語マスキング)を生成
+  ② 背景は Pillow で暖色サンバーストを確定描画（決まった構図の忠実再現のため既定はGemini不使用）
+     ※どうしてもGemini背景にしたい時だけ USE_GEMINI_BG=1（構図は崩れる前提）
+  ③ Pillow合成：黒文字＋太白フチの見出し(●●は赤)、楕円吹き出し＋しっぽ(強調語=赤/青)
+  厳密QA：中央30%(半径297)に文字/吹き出しが侵入していないかを自動チェック
 出力: out/<ep>_thumb.png（1280x720）
 使い方: python3 build/gen_thumbnail.py --ep ep20260720
 """
 import argparse
+import io
 import json
 import math
 import os
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 W, H = 1280, 720
-CENTER = (425, 145, 855, 575)                 # 中央の空けるスクエア(約430x430)
-RED = (230, 0, 18)                            # #E60012
-DARK = (40, 0, 0)                             # 下端の濃い赤〜黒
-BLUE = (27, 79, 156)                          # #1B4F9C
-STRIPE_A, STRIPE_B = (245, 166, 35), (255, 226, 77)   # オレンジ×黄（テンプレ既定の一例）
+CX, CY = W // 2, H // 2
+CLEAR_R = 297                       # 中央の空けるべき半径（円面積が画像の約30%）
+BLACK = (18, 18, 18)
+WHITE = (255, 255, 255)
+RED = (214, 0, 15)                  # 強調・●●
+BLUE = (27, 79, 156)               # 用語/固有名詞の強調
+EMPH = {"red": RED, "blue": BLUE}
 
 FONTS = [
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Black.ttc",
@@ -49,35 +53,48 @@ def read(path):
         return f.read()
 
 
-# ---------- ① 文言＆背景プロンプト（Opus 4.8, 構造化出力） ----------
+def lerp(a, b, t):
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+# ---------- ① 文言（Opus 4.8, 構造化出力） ----------
 SCHEMA = {
     "type": "object",
     "properties": {
-        "top": {"type": "string"},          # 上段見出し（煽り/前提）
-        "bottom": {"type": "string"},       # 下段見出し（結論/数字, ●●で1つ伏せ）
-        "bubbles": {"type": "array", "items": {"type": "string"}},  # 吹き出し4つ
-        "bg_prompt": {"type": "string"},    # Gemini背景プロンプト（英語, 文字なし, 中央空け）
+        "top": {"type": "string"},
+        "bottom": {"type": "string"},
+        "bubbles": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "emph": {"type": "string"},
+                    "color": {"type": "string", "enum": ["red", "blue"]},
+                },
+                "required": ["text", "emph", "color"],
+                "additionalProperties": False,
+            },
+        },
     },
-    "required": ["top", "bottom", "bubbles", "bg_prompt"],
+    "required": ["top", "bottom", "bubbles"],
     "additionalProperties": False,
 }
 
-THUMB_SYSTEM = """あなたはYouTube「2chお金/投資スレ」系まとめ動画のサムネ構成作家です。
-与えられた動画タイトル/テーマから、下記テンプレに沿ったサムネ文言と背景プロンプトをJSONで返します。
+THUMB_SYSTEM = """あなたはYouTube「2chお金/投資スレ」系まとめ動画のサムネ文言作家です。
+動画タイトル/テーマから、下記テンプレのサムネ文言をJSONで返します。画像や装飾の指定は不要（文言のみ）。
 
 【文言の型】
-- top（上段大見出し）: 煽り/前提。疑問形も可。8〜14字目安。
-- bottom（下段大見出し）: 結論/数字。**核心の数字を1つだけ ●● で伏せる**（最重要の引き）。8〜14字。
-- bubbles（四隅の吹き出し4つ）: 2ch風のツッコミ/意見バトル。各4〜10字（例: 正論やろ / 養分乙 / マジか / ようやっとる？）。
-- 命令・断定(絶対/必ず/一択)、極端評価(最強/神/優秀ライン)、年齢×金額、固有名詞(新NISA/オルカン等)を効かせる。
+- top（上段大見出し）: 煽り/前提。疑問形も可。8〜14字。
+- bottom（下段大見出し）: 結論/数字。**核心の数字を1つだけ ●● で伏せる**（最重要の引き。●は全角、必ず2つ）。8〜14字。
+- bubbles（四隅の吹き出し4つ）: 2ch風のツッコミ/意見バトル。各 **4〜9字**（短く！四隅に収める）。
+  各吹き出しは {text, emph, color}:
+    emph = text の中の強調する1語（部分文字列、必ず text に含める）。
+    color = "red"（損失/危険/煽り: 溶かした/退場/養分 等）or "blue"（専門用語/固有名詞: ロット/新NISA/オルカン 等）。
+- 命令・断定(絶対/必ず/一択)、極端評価(最強/神/優秀ライン)、年齢×金額、固有名詞も効かせる。
 
 【NG語の伏せ字（YouTube規約対策・必須）】暴力/センシティブ語はそのまま使わない。
 - 死ぬ→退場/飛ぶ/溶ける/●ぬ、 殺す→潰す/●す。 金融言い換え: 退場/溶かす/焼かれる/養分/含み損/強制ロスカット。
-
-【bg_prompt（背景・英語）】
-- 中央 約1/3(430x430px)を空ける指示を必ず入れる（"leave the central square area empty for a character illustration"）。
-- 放射状サンバースト＋2トーンの明るいストライプ、投資/お金/相場を想起させる要素、鮮やかで視認性高め。
-- **画像内に文字・数字・ロゴを描かない**（"no text, no letters, no numbers, no watermark"）。16:9。
 """
 
 
@@ -86,157 +103,198 @@ def gen_copy(title, topics):
     client = anthropic.Anthropic()
     msg = client.messages.create(
         model="claude-opus-4-8",
-        max_tokens=2000,
+        max_tokens=1500,
         output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
         system=THUMB_SYSTEM,
         messages=[{"role": "user", "content":
                    f"動画タイトル:\n{title}\n\n参考テーマ:\n{topics}\n\n"
-                   "このサムネの top / bottom / bubbles(4つ) / bg_prompt をJSONで。"}],
+                   "top / bottom / bubbles(4つ, 各text・emph・color) をJSONで。"}],
     )
     data = json.loads(next(b.text for b in msg.content if b.type == "text"))
     b = (data.get("bubbles") or [])[:4]
     while len(b) < 4:
-        b.append("")
+        b.append({"text": "", "emph": "", "color": "red"})
     data["bubbles"] = b
     return data
 
 
-# ---------- ② 背景：Gemini（あれば）／Pillowサンバースト（fallback） ----------
+# ---------- ② 背景：暖色サンバースト（Pillow確定描画） ----------
+def sunburst_bg():
+    # 放射グラデ（中央=淡黄 → 中間=橙 → 外周=赤）を小サイズで作って拡大
+    sw, sh = 320, 180
+    small = Image.new("RGB", (sw, sh))
+    px = small.load()
+    cx, cy = sw / 2, sh / 2
+    maxd = math.hypot(cx, cy)
+    c_in, c_mid, c_out = (255, 246, 168), (247, 155, 28), (201, 24, 12)
+    for yy in range(sh):
+        for xx in range(sw):
+            t = math.hypot(xx - cx, yy - cy) / maxd
+            col = lerp(c_in, c_mid, t / 0.55) if t < 0.55 else lerp(c_mid, c_out, (t - 0.55) / 0.45)
+            px[xx, yy] = col
+    img = small.resize((W, H)).convert("RGBA")
+    # 放射レイ（交互の明るい黄ウェッジを半透明で重ねる＝サンバースト）
+    rays = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    rd = ImageDraw.Draw(rays)
+    n = 24
+    R = int(math.hypot(W, H))
+    for i in range(n * 2):
+        if i % 2 == 0:
+            a0 = math.radians(i * 180.0 / n)
+            a1 = math.radians((i + 1) * 180.0 / n)
+            rd.polygon([(CX, CY),
+                        (CX + R * math.cos(a0), CY + R * math.sin(a0)),
+                        (CX + R * math.cos(a1), CY + R * math.sin(a1))],
+                       fill=(255, 236, 130, 70))
+    return Image.alpha_composite(img, rays)
+
+
 def gemini_bg(prompt):
-    key = os.environ.get("GEMINI_API_KEY")
-    if not key:
-        print("  ! GEMINI_API_KEY 未設定 → サンバースト背景で代替（Geminiは使われません）")
+    if not os.environ.get("USE_GEMINI_BG") or not os.environ.get("GEMINI_API_KEY"):
         return None
-    import io
-    from google import genai
-    from google.genai import types
-    client = genai.Client(api_key=key)
-    model = os.environ.get("GEMINI_IMAGE_MODEL", "imagen-4.0-generate-001")
-    # ① Imagen系（text-to-image専用API）
     try:
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        model = os.environ.get("GEMINI_IMAGE_MODEL", "imagen-4.0-generate-001")
         resp = client.models.generate_images(
             model=model, prompt=prompt,
-            config=types.GenerateImagesConfig(number_of_images=1, aspect_ratio="16:9"),
-        )
+            config=types.GenerateImagesConfig(number_of_images=1, aspect_ratio="16:9"))
         data = getattr(resp.generated_images[0].image, "image_bytes", None)
         if data:
-            print(f"  Gemini背景を生成しました（model={model}）")
-            return fit_cover(Image.open(io.BytesIO(data)).convert("RGB"), W, H)
+            print(f"  Gemini背景を生成（model={model}）")
+            im = Image.open(io.BytesIO(data)).convert("RGB")
+            r = max(W / im.width, H / im.height)
+            im = im.resize((int(im.width * r), int(im.height * r)))
+            x, y = (im.width - W) // 2, (im.height - H) // 2
+            return im.crop((x, y, x + W, y + H)).convert("RGBA")
     except Exception as e:
-        print(f"  ! generate_images 失敗（{model}）: {e}")
-    # ② gemini-*-image 系（generate_contentで画像を返すモデル）にフォールバック
-    try:
-        gmodel = os.environ.get("GEMINI_CONTENT_MODEL", "gemini-3-pro-image-preview")
-        resp = client.models.generate_content(model=gmodel, contents=[prompt])
-        for part in resp.candidates[0].content.parts:
-            inline = getattr(part, "inline_data", None)
-            if inline and getattr(inline, "data", None):
-                print(f"  Gemini背景を生成しました（model={gmodel}）")
-                return fit_cover(Image.open(io.BytesIO(inline.data)).convert("RGB"), W, H)
-    except Exception as e:
-        print(f"  ! generate_content 失敗（{gmodel}）: {e}")
-    print("  ! Geminiで画像を取得できず → サンバースト背景で代替")
+        print(f"  ! Gemini背景失敗→サンバースト: {e}")
     return None
 
 
-def fit_cover(img, w, h):
-    r = max(w / img.width, h / img.height)
-    img = img.resize((int(img.width * r), int(img.height * r)))
-    x = (img.width - w) // 2
-    y = (img.height - h) // 2
-    return img.crop((x, y, x + w, y + h))
-
-
-def sunburst_bg():
-    """放射サンバースト＋2トーンで背景を自前描画（Geminiなしでも必ず1枚出す）。"""
-    img = Image.new("RGB", (W, H), STRIPE_B)
-    d = ImageDraw.Draw(img)
-    cx, cy = W // 2, H // 2
-    R = int(math.hypot(W, H))
-    seg = 24
-    for i in range(seg * 2):
-        a0 = math.radians(i * (360 / (seg * 2)))
-        a1 = math.radians((i + 1) * (360 / (seg * 2)))
-        if i % 2 == 0:
-            d.polygon([(cx, cy),
-                       (cx + R * math.cos(a0), cy + R * math.sin(a0)),
-                       (cx + R * math.cos(a1), cy + R * math.sin(a1))], fill=STRIPE_A)
-    # 上下に横ストライプ帯（見出しの下地）
-    d.rectangle([0, 0, W, 150], fill=STRIPE_A)
-    d.rectangle([0, H - 170, W, H], fill=STRIPE_A)
-    return img
-
-
-# ---------- ③ Pillow合成：見出し（縦グラデ＋白フチ＋影）・吹き出し ----------
-def gradient_line(text, fnt, top_color, bottom_color, stroke=10):
+# ---------- ③ 見出し（黒＋太白フチ＋影、●は赤）＆ 楕円吹き出し ----------
+def headline_tile(text, fnt, stroke):
     dd = ImageDraw.Draw(Image.new("RGBA", (4, 4)))
-    bb = dd.textbbox((0, 0), text, font=fnt, stroke_width=stroke)
-    tw, th = bb[2] - bb[0], bb[3] - bb[1]
-    pad = 16
-    Wd, Hd = tw + pad * 2, th + pad * 2
-    ox, oy = pad - bb[0], pad - bb[1]
-    fill_mask = Image.new("L", (Wd, Hd), 0)
-    ImageDraw.Draw(fill_mask).text((ox, oy), text, font=fnt, fill=255, stroke_width=0)
-    out_mask = Image.new("L", (Wd, Hd), 0)
-    ImageDraw.Draw(out_mask).text((ox, oy), text, font=fnt, fill=255, stroke_width=stroke, stroke_fill=255)
+    widths = [dd.textlength(c, font=fnt) for c in text]
+    asc, desc = fnt.getmetrics()
+    pad = stroke + 12
+    Wd = int(sum(widths)) + pad * 2
+    Hd = asc + desc + pad * 2
     tile = Image.new("RGBA", (Wd, Hd), (0, 0, 0, 0))
-    shadow = Image.new("RGBA", (Wd, Hd), (0, 0, 0, 0))
-    shadow.paste((0, 0, 0, 150), (0, 0), out_mask)
-    tile.alpha_composite(shadow, (6, 7))
-    white = Image.new("RGBA", (Wd, Hd), (0, 0, 0, 0))
-    white.paste((255, 255, 255, 255), (0, 0), out_mask)
-    tile.alpha_composite(white)
-    col = Image.new("RGBA", (1, Hd))
-    for y in range(Hd):
-        t = y / max(1, Hd - 1)
-        col.putpixel((0, y), tuple(int(top_color[k] + (bottom_color[k] - top_color[k]) * t) for k in range(3)) + (255,))
-    grad = col.resize((Wd, Hd))
-    grad.putalpha(fill_mask)
-    tile.alpha_composite(grad)
+    d = ImageDraw.Draw(tile)
+    x = pad
+    for c, w in zip(text, widths):                       # 影
+        d.text((x + 5, pad + 6), c, font=fnt, fill=(0, 0, 0, 150),
+               stroke_width=stroke, stroke_fill=(0, 0, 0, 150))
+        x += w
+    x = pad
+    for c, w in zip(text, widths):                       # 白フチ＋本体（●は赤）
+        col = RED if c in "●" else BLACK
+        d.text((x, pad), c, font=fnt, fill=col, stroke_width=stroke, stroke_fill=WHITE)
+        x += w
     return tile
 
 
-def fit_headline(text, maxw, base=128, stroke=10):
+def fit_headline(text, maxw, base=124):
     size = base
-    while size > 48:
+    while size > 54:
         f = font(size)
-        tile = gradient_line(text, f, RED, DARK, stroke)
+        tile = headline_tile(text, f, max(6, size // 11))
         if tile.width <= maxw:
             return tile
         size -= 6
-    return gradient_line(text, font(48), RED, DARK, stroke)
+    return headline_tile(text, font(54), 8)
 
 
-def paste_center_x(base, tile, cx, y):
-    base.alpha_composite(tile, (int(cx - tile.width / 2), int(y)))
+def _make_bubble(text, emph, color, fnt):
+    d0 = ImageDraw.Draw(Image.new("RGBA", (4, 4)))
+    tw = d0.textlength(text, font=fnt)
+    asc, desc = fnt.getmetrics()
+    th = asc + desc
+    padx, pady = 30, 18
+    bw, bh = int(tw) + padx * 2, th + pady * 2
+    tail = 20
+    tile = Image.new("RGBA", (bw, bh + tail), (0, 0, 0, 0))
+    d = ImageDraw.Draw(tile)
+    # しっぽ（先に描く）→ 楕円を上に重ねてしっぽの上辺を隠す＝下に出っ張るだけ
+    d.polygon([(bw // 2 - 15, bh - 8), (bw // 2 + 15, bh - 8), (bw // 2 - 2, bh + tail)],
+              fill=WHITE, outline=(0, 0, 0), width=5)
+    d.ellipse([0, 0, bw - 1, bh - 1], fill=WHITE, outline=(0, 0, 0), width=6)
+    # テキスト（強調語のみ色替え）
+    runs = [(text, BLACK)]
+    if emph and emph in text:
+        i = text.index(emph)
+        runs = [(text[:i], BLACK), (emph, EMPH.get(color, RED)), (text[i + len(emph):], BLACK)]
+        runs = [r for r in runs if r[0]]
+    total = sum(d.textlength(r, font=fnt) for r, _ in runs)
+    x = (bw - total) / 2
+    ty = (bh - th) / 2
+    for r, col in runs:
+        d.text((x, ty), r, font=fnt, fill=col)
+        x += d.textlength(r, font=fnt)
+    return tile
 
 
-def draw_bubble(base, cx, cy, text, fnt):
+def bubble_tile(text, emph, color, max_w):
+    """横幅 max_w に収まるようフォントを自動縮小（中央カラムへはみ出させない）。"""
     if not text:
-        return
-    d = ImageDraw.Draw(base)
-    bb = d.textbbox((0, 0), text, font=fnt)
-    tw, th = bb[2] - bb[0], bb[3] - bb[1]
-    padx, pady = 26, 18
-    bw, bh = tw + padx * 2, th + pady * 2
-    x0, y0 = int(cx - bw / 2), int(cy - bh / 2)
-    d.rounded_rectangle([x0, y0, x0 + bw, y0 + bh], radius=22, fill=(255, 255, 255), outline=(0, 0, 0), width=6)
-    d.text((cx - tw / 2 - bb[0], cy - th / 2 - bb[1]), text, font=fnt, fill=(20, 20, 20))
+        return None
+    size = 42
+    while size >= 26:
+        tile = _make_bubble(text, emph, color, font(size))
+        if tile.width <= max_w:
+            return tile
+        size -= 2
+    return _make_bubble(text, emph, color, font(26))
 
 
-def build(data, out_path):
-    bg = gemini_bg(data["bg_prompt"]) or sunburst_bg()
-    base = bg.convert("RGBA")
-    # 上下の大見出し（縦グラデ＋白フチ＋影）
-    paste_center_x(base, fit_headline(data["top"], W - 80), W / 2, 18)
-    bottom_tile = fit_headline(data["bottom"], W - 80)
-    paste_center_x(base, bottom_tile, W / 2, H - bottom_tile.height - 16)
-    # 四隅の吹き出し（中央CENTERには侵入させない）
-    bf = font(40)
-    pos = [(215, 250), (W - 215, 250), (215, 470), (W - 215, 470)]
-    for (cx, cy), txt in zip(pos, data["bubbles"]):
-        draw_bubble(base, cx, cy, txt, bf)
-    base.convert("RGB").save(out_path)
+def paste_cx(layer, tile, cx, y):
+    if tile:
+        layer.alpha_composite(tile, (int(cx - tile.width / 2), int(y)))
+
+
+def paste_center(layer, tile, cx, cy):
+    if tile:
+        layer.alpha_composite(tile, (int(cx - tile.width / 2), int(cy - tile.height / 2)))
+
+
+# 中央キャラ用の空きゾーン＝上下見出しの間の中央カラム（x方向）。吹き出しはこの外(左右列)に置く。
+CLEAR_X0, CLEAR_X1 = 320, 960          # 中央カラム幅640px。上下は見出しの高さから動的に決定→面積≈30%
+SIDE_CX_L, SIDE_CX_R = 158, W - 158    # 左右列の吹き出し中心
+BUB_MAXW = 288                          # 吹き出し最大幅（中央カラムへはみ出さない上限）
+
+
+def qa_box_clear(overlay, box):
+    """中央カラム(box)内に文字/吹き出しの不透明画素が無いか。max alphaを返す(0が理想)。"""
+    return overlay.crop(box).getchannel("A").getextrema()[1]
+
+
+def build(data, out_path, bg_prompt=""):
+    bg = gemini_bg(bg_prompt) or sunburst_bg()
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    # 上下の大見出し（全幅）
+    top_tile = fit_headline(data["top"], W - 40)
+    bot_tile = fit_headline(data["bottom"], W - 40)
+    paste_cx(overlay, top_tile, W / 2, 8)
+    paste_cx(overlay, bot_tile, W / 2, H - bot_tile.height - 6)
+    # 中央カラム＝見出しの間
+    y0 = top_tile.height + 16
+    y1 = H - bot_tile.height - 16
+    cys = [y0 + 74, y0 + 74, y1 - 74, y1 - 74]
+    cxs = [SIDE_CX_L, SIDE_CX_R, SIDE_CX_L, SIDE_CX_R]
+    for cx, cy, bub in zip(cxs, cys, data["bubbles"]):
+        paste_center(overlay, bubble_tile(bub.get("text", ""), bub.get("emph", ""),
+                                          bub.get("color", "red"), BUB_MAXW), cx, cy)
+    # 厳密QA：中央カラム(x:CLEAR_X0..X1, y:見出しの間)が空いているか
+    box = (CLEAR_X0, y0, CLEAR_X1, y1)
+    maxa = qa_box_clear(overlay, box)
+    area_pct = (CLEAR_X1 - CLEAR_X0) * (y1 - y0) / (W * H) * 100
+    print(f"  QA中央空き: {'OK' if maxa <= 8 else f'NG(侵入 alpha={maxa})'} "
+          f"／ 中央カラム {CLEAR_X1 - CLEAR_X0}x{y1 - y0}px(画像の{area_pct:.0f}%)が空き")
+    final = Image.alpha_composite(bg, overlay).convert("RGB")
+    final.save(out_path)
+    return maxa
 
 
 def main():
@@ -255,7 +313,7 @@ def main():
     topics = read("out/topics.txt") if os.path.exists(os.path.join(ROOT, "out/topics.txt")) else title
 
     data = gen_copy(title, topics)
-    print("サムネ文言:", json.dumps(data, ensure_ascii=False, indent=2))
+    print("サムネ文言:", json.dumps(data, ensure_ascii=False))
     out_path = args.out or os.path.join(ROOT, "out", f"{args.ep}_thumb.png")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     build(data, out_path)
