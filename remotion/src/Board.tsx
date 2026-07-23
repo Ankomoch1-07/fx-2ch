@@ -23,8 +23,15 @@ export type Seg = {
 };
 export type Timeline = {
   fps: number; title?: string; opImages?: string[]; edImages?: string[]; se?: string | null;
-  bg?: string; opBg?: string; bgFrames?: number; opBgFrames?: number; segments: Seg[];
+  bg?: string; opBg?: string; bgFrames?: number; opBgFrames?: number;
+  bgmOpEd?: string | null; bgmMain?: string | null; segments: Seg[];
 };
+
+// BGM音量（ナレーションの下で鳴らす小音量）と、両端フェードのボリューム関数
+const BGM_OP = 0.16, BGM_MAIN = 0.14;
+const fadeVol = (dur: number, vol: number) => (f: number) =>
+  interpolate(f, [0, 20, Math.max(21, dur - 25), dur], [0, vol, vol, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
 const CHARA: Record<string, { color: string }> = {
   "ずんだもん":   { color: "#c26a00" }, "玄野武宏": { color: "#b3261e" },
@@ -51,9 +58,30 @@ export const Board: React.FC<{ ep: string; timeline: Timeline }> = ({ ep, timeli
   const descSeg = segs.find((s) => s.phase === "desc");
   const edSeg = segs.find((s) => s.phase === "ed");
 
+  // BGMのフェーズ境界：OP=[0, mainStart) / 本編=[mainStart, edStart) / ED=[edStart, total)
+  const total = segs.length ? segs[segs.length - 1].start + segs[segs.length - 1].dur : 300;
+  const mainStart = segs.find((s) => (s.phase ?? "main") === "main")?.start ?? 0;
+  const edStart = edSeg ? edSeg.start : total;
+
   return (
     <AbsoluteFill style={{ fontFamily: "sans-serif" }}>
       <Audio src={staticFile(`${ep}/voice.wav`)} />
+      {/* BGM：OPとEDは同じ曲A、本編は曲B（ループ・小音量・両端フェード） */}
+      {timeline.bgmOpEd && mainStart > 0 && (
+        <Sequence from={0} durationInFrames={mainStart} layout="none">
+          <Audio src={staticFile(timeline.bgmOpEd)} loop volume={fadeVol(mainStart, BGM_OP)} />
+        </Sequence>
+      )}
+      {timeline.bgmMain && edStart > mainStart && (
+        <Sequence from={mainStart} durationInFrames={edStart - mainStart} layout="none">
+          <Audio src={staticFile(timeline.bgmMain)} loop volume={fadeVol(edStart - mainStart, BGM_MAIN)} />
+        </Sequence>
+      )}
+      {timeline.bgmOpEd && total > edStart && (
+        <Sequence from={edStart} durationInFrames={total - edStart} layout="none">
+          <Audio src={staticFile(timeline.bgmOpEd)} loop volume={fadeVol(total - edStart, BGM_OP)} />
+        </Sequence>
+      )}
       {phase === "hook" && <HookLayer seg={cur} timeline={timeline} />}
       {(phase === "title" || phase === "desc") && titleSeg && (
         <CardLayer timeline={timeline} images={timeline.opImages ?? []} animSeg={titleSeg}
