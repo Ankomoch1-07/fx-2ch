@@ -27,10 +27,13 @@ export type Timeline = {
   bgmOpEd?: string | null; bgmMain?: string | null; segments: Seg[];
 };
 
-// BGM音量（ナレーションの下で鳴らす小音量）と、両端フェードのボリューム関数
+// BGM音量（ナレーションの下で鳴らす小音量）。境界は真のクロスフェード（区間を重ねて同時に鳴らす）。
 const BGM_OP = 0.16, BGM_MAIN = 0.14;
-const fadeVol = (dur: number, vol: number) => (f: number) =>
-  interpolate(f, [0, 20, Math.max(21, dur - 25), dur], [0, vol, vol, 0],
+const BGM_CF = 36;              // クロスフェード長(フレーム, 1.2s)。長くするほど滑らか
+const HALF = BGM_CF / 2;
+// fin/fout フレームで頭を上げ/末尾を下げるボリューム関数（f は Sequence 開始からの相対フレーム）
+const cfVol = (dur: number, vol: number, fin: number, fout: number) => (f: number) =>
+  interpolate(f, [0, fin, Math.max(fin + 1, dur - fout), dur], [0, vol, vol, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
 const CHARA: Record<string, { color: string }> = {
@@ -66,22 +69,30 @@ export const Board: React.FC<{ ep: string; timeline: Timeline }> = ({ ep, timeli
   return (
     <AbsoluteFill style={{ fontFamily: "sans-serif" }}>
       <Audio src={staticFile(`${ep}/voice.wav`)} />
-      {/* BGM：OPとEDは同じ曲A、本編は曲B（ループ・小音量・両端フェード） */}
-      {timeline.bgmOpEd && mainStart > 0 && (
-        <Sequence from={0} durationInFrames={mainStart} layout="none">
-          <Audio src={staticFile(timeline.bgmOpEd)} loop volume={fadeVol(mainStart, BGM_OP)} />
+      {/* BGM：OPとEDは同じ曲A、本編は曲B。境界で区間を重ねて真のクロスフェード（無音のスキマなし） */}
+      {timeline.bgmOpEd && mainStart > BGM_CF && (
+        <Sequence from={0} durationInFrames={mainStart + HALF} layout="none">
+          <Audio src={staticFile(timeline.bgmOpEd)} loop volume={cfVol(mainStart + HALF, BGM_OP, 20, BGM_CF)} />
         </Sequence>
       )}
-      {timeline.bgmMain && edStart > mainStart && (
-        <Sequence from={mainStart} durationInFrames={edStart - mainStart} layout="none">
-          <Audio src={staticFile(timeline.bgmMain)} loop volume={fadeVol(edStart - mainStart, BGM_MAIN)} />
-        </Sequence>
-      )}
-      {timeline.bgmOpEd && total > edStart && (
-        <Sequence from={edStart} durationInFrames={total - edStart} layout="none">
-          <Audio src={staticFile(timeline.bgmOpEd)} loop volume={fadeVol(total - edStart, BGM_OP)} />
-        </Sequence>
-      )}
+      {timeline.bgmMain && edStart - mainStart > BGM_CF * 2 && (() => {
+        const from = Math.max(0, mainStart - HALF);
+        const dur = edStart + HALF - from;
+        return (
+          <Sequence from={from} durationInFrames={dur} layout="none">
+            <Audio src={staticFile(timeline.bgmMain)} loop volume={cfVol(dur, BGM_MAIN, BGM_CF, BGM_CF)} />
+          </Sequence>
+        );
+      })()}
+      {timeline.bgmOpEd && total - edStart > BGM_CF && (() => {
+        const from = Math.max(0, edStart - HALF);
+        const dur = total - from;
+        return (
+          <Sequence from={from} durationInFrames={dur} layout="none">
+            <Audio src={staticFile(timeline.bgmOpEd)} loop volume={cfVol(dur, BGM_OP, BGM_CF, 20)} />
+          </Sequence>
+        );
+      })()}
       {phase === "hook" && <HookLayer seg={cur} timeline={timeline} />}
       {(phase === "title" || phase === "desc") && titleSeg && (
         <CardLayer timeline={timeline} images={timeline.opImages ?? []} animSeg={titleSeg}
