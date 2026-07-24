@@ -13,3 +13,7 @@ build/client_secret.json
 remotion/public/bg/ocean.mp4
 remotion/public/bg/nature.mp4
 remotion/public/bg/grandfather.mp4
+
+# Mac管理ファイル
+.DS_Store
+**/.DS_Store
