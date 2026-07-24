@@ -28,7 +28,7 @@ export type Timeline = {
 };
 
 // BGM音量（ナレーションの下で鳴らす小音量）。境界は真のクロスフェード（区間を重ねて同時に鳴らす）。
-const BGM_OP = 0.16, BGM_MAIN = 0.14;
+const BGM_OP = 0.144, BGM_MAIN = 0.126;   // 従来0.16/0.14から10%ダウン
 const BGM_CF = 36;              // クロスフェード長(フレーム, 1.2s)。長くするほど滑らか
 const HALF = BGM_CF / 2;
 // fin/fout フレームで頭を上げ/末尾を下げるボリューム関数（f は Sequence 開始からの相対フレーム）
