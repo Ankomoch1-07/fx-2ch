@@ -57,40 +57,50 @@ def lerp(a, b, t):
     return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
-# ---------- ① 文言（Opus 4.8, 構造化出力） ----------
+# ---------- ① 文言候補を複数（Opus 4.8, 構造化出力。画像は出さず候補案のみ） ----------
+_BUBBLE = {
+    "type": "object",
+    "properties": {
+        "text": {"type": "string"},
+        "emph": {"type": "string"},
+        "color": {"type": "string", "enum": ["red", "blue"]},
+    },
+    "required": ["text", "emph", "color"],
+    "additionalProperties": False,
+}
 SCHEMA = {
     "type": "object",
     "properties": {
-        "top": {"type": "string"},
-        "bottom": {"type": "string"},
-        "bubbles": {
+        "candidates": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
-                    "text": {"type": "string"},
-                    "emph": {"type": "string"},
-                    "color": {"type": "string", "enum": ["red", "blue"]},
+                    "aim": {"type": "string"},
+                    "top": {"type": "string"},
+                    "bottom": {"type": "string"},
+                    "bubbles": {"type": "array", "items": _BUBBLE},
                 },
-                "required": ["text", "emph", "color"],
+                "required": ["aim", "top", "bottom", "bubbles"],
                 "additionalProperties": False,
             },
         },
     },
-    "required": ["top", "bottom", "bubbles"],
+    "required": ["candidates"],
     "additionalProperties": False,
 }
 
 THUMB_SYSTEM = """あなたはYouTube「2chお金/投資スレ」系まとめ動画のサムネ文言作家です。
-動画タイトル/テーマから、下記テンプレのサムネ文言をJSONで返します。画像や装飾の指定は不要（文言のみ）。
+動画タイトル/テーマから、サムネ文言の候補案を複数(指定数)、JSONで返します。画像や装飾の指定は不要（文言のみ）。
+各案は「型・切り口」を変えて互いに被らないようにする（例：煽り違い／数字を変える／恐怖 vs 夢／UGC命令／反転オチ／固有名詞ガチ勢）。
 
-【文言の型】
+各案 = {aim, top, bottom, bubbles(4)}:
+- aim: その案のねらい/型を10字前後で（例「恐怖煽り」「数字の引き」「反転オチ」）。
 - top（上段大見出し）: 煽り/前提。疑問形も可。8〜14字。
 - bottom（下段大見出し）: 結論/数字。**核心の数字を1つだけ ●● で伏せる**（最重要の引き。●は全角、必ず2つ）。8〜14字。
-- bubbles（四隅の吹き出し4つ）: 2ch風のツッコミ/意見バトル。各 **4〜9字**（短く！四隅に収める）。
-  各吹き出しは {text, emph, color}:
-    emph = text の中の強調する1語（部分文字列、必ず text に含める）。
-    color = "red"（損失/危険/煽り: 溶かした/退場/養分 等）or "blue"（専門用語/固有名詞: ロット/新NISA/オルカン 等）。
+- bubbles（四隅の吹き出し4つ）: 2ch風のツッコミ/意見バトル。各 **4〜9字**（短く！）。各 {text, emph, color}:
+    emph = text 内の強調1語（部分文字列、必ず text に含める）。
+    color = "red"（損失/危険/煽り: 溶かした/退場/養分 等）or "blue"（用語/固有名詞: ロット/新NISA/オルカン 等）。
 - 命令・断定(絶対/必ず/一択)、極端評価(最強/神/優秀ライン)、年齢×金額、固有名詞も効かせる。
 
 【NG語の伏せ字（YouTube規約対策・必須）】暴力/センシティブ語はそのまま使わない。
@@ -98,24 +108,41 @@ THUMB_SYSTEM = """あなたはYouTube「2chお金/投資スレ」系まとめ動
 """
 
 
-def gen_copy(title, topics):
+def gen_candidates(title, topics, n=4):
     import anthropic
     client = anthropic.Anthropic()
     msg = client.messages.create(
         model="claude-opus-4-8",
-        max_tokens=1500,
+        max_tokens=3000,
         output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
         system=THUMB_SYSTEM,
         messages=[{"role": "user", "content":
                    f"動画タイトル:\n{title}\n\n参考テーマ:\n{topics}\n\n"
-                   "top / bottom / bubbles(4つ, 各text・emph・color) をJSONで。"}],
+                   f"互いに型の違うサムネ文言案を{n}個、JSONで（各 aim/top/bottom/bubbles4つ）。"}],
     )
     data = json.loads(next(b.text for b in msg.content if b.type == "text"))
-    b = (data.get("bubbles") or [])[:4]
-    while len(b) < 4:
-        b.append({"text": "", "emph": "", "color": "red"})
-    data["bubbles"] = b
-    return data
+    cands = data.get("candidates", [])[:n]
+    for c in cands:
+        b = (c.get("bubbles") or [])[:4]
+        while len(b) < 4:
+            b.append({"text": "", "emph": "", "color": "red"})
+        c["bubbles"] = b
+    return cands
+
+
+def write_ideas(ep, title, cands, md_path, json_path):
+    circ = "①②③④"
+    lines = [f"# {ep} サムネ候補案（{len(cands)}案）", "", f"元タイトル: {title}", ""]
+    for i, c in enumerate(cands, 1):
+        bubs = " / ".join(f"{circ[j]}{b.get('text', '')}" for j, b in enumerate(c["bubbles"]))
+        lines += [f"## 案{i}（ねらい: {c.get('aim', '')}）",
+                  f"- 上テロップ: {c.get('top', '')}",
+                  f"- 下テロップ: {c.get('bottom', '')}",
+                  f"- 吹き出し: {bubs}", ""]
+    open(md_path, "w", encoding="utf-8").write("\n".join(lines))
+    json.dump({"ep": ep, "title": title, "candidates": cands},
+              open(json_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    print("\n".join(lines))
 
 
 # ---------- ② 背景：暖色サンバースト（Pillow確定描画） ----------
@@ -301,8 +328,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ep", required=True)
     ap.add_argument("--script", default=None)
-    ap.add_argument("--out", default=None)
+    ap.add_argument("--n", type=int, default=4, help="候補案の数")
+    ap.add_argument("--render", type=int, default=None,
+                    help="保存済み候補jsonの案(1始まり)を選んで画像化（任意・手動用）")
     args = ap.parse_args()
+
+    out_dir = os.path.join(ROOT, "out")
+    os.makedirs(out_dir, exist_ok=True)
+    md_path = os.path.join(out_dir, f"{args.ep}_thumb_ideas.md")
+    json_path = os.path.join(out_dir, f"{args.ep}_thumb_ideas.json")
+
+    # 任意：選んだ候補案を画像に描画（既定フローでは呼ばれない。手動で使う）
+    if args.render is not None:
+        cands = json.load(open(json_path, encoding="utf-8"))["candidates"]
+        c = cands[args.render - 1]
+        out_png = os.path.join(out_dir, f"{args.ep}_thumb.png")
+        build(c, out_png)
+        print(f"done: {out_png}（案{args.render}を画像化）")
+        return
 
     script = args.script or os.path.join(ROOT, "scripts", f"{args.ep}.txt")
     title = ""
@@ -312,12 +355,9 @@ def main():
             break
     topics = read("out/topics.txt") if os.path.exists(os.path.join(ROOT, "out/topics.txt")) else title
 
-    data = gen_copy(title, topics)
-    print("サムネ文言:", json.dumps(data, ensure_ascii=False))
-    out_path = args.out or os.path.join(ROOT, "out", f"{args.ep}_thumb.png")
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    build(data, out_path)
-    print(f"done: {out_path}")
+    cands = gen_candidates(title, topics, args.n)
+    write_ideas(args.ep, title, cands, md_path, json_path)
+    print(f"done: {md_path}")
 
 
 if __name__ == "__main__":
