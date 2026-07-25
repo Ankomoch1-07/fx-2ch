@@ -71,7 +71,7 @@ _BUBBLE = {
 SCHEMA = {
     "type": "object",
     "properties": {
-        "candidates": {
+        "telops": {
             "type": "array",
             "items": {
                 "type": "object",
@@ -79,68 +79,64 @@ SCHEMA = {
                     "aim": {"type": "string"},
                     "top": {"type": "string"},
                     "bottom": {"type": "string"},
-                    "bubbles": {"type": "array", "items": _BUBBLE},
                 },
-                "required": ["aim", "top", "bottom", "bubbles"],
+                "required": ["aim", "top", "bottom"],
                 "additionalProperties": False,
             },
         },
+        "bubbles": {"type": "array", "items": _BUBBLE},
     },
-    "required": ["candidates"],
+    "required": ["telops", "bubbles"],
     "additionalProperties": False,
 }
 
 THUMB_SYSTEM = """あなたはYouTube「2chお金/投資スレ」系まとめ動画のサムネ文言作家です。
-動画タイトル/テーマから、サムネ文言の候補案を複数(指定数)、JSONで返します。画像や装飾の指定は不要（文言のみ）。
-各案は「型・切り口」を変えて互いに被らないようにする（例：煽り違い／数字を変える／恐怖 vs 夢／UGC命令／反転オチ／固有名詞ガチ勢）。
+動画タイトル/テーマから、(1)上下テロップ案を複数、(2)吹き出しコメント案を複数、JSONで返します（文言のみ・画像指定不要）。
 
-各案 = {aim, top, bottom, bubbles(4)}:
-- aim: その案のねらい/型を10字前後で（例「恐怖煽り」「数字の引き」「反転オチ」）。
-- top（上段大見出し）: 煽り/前提。疑問形も可。8〜14字。
-- bottom（下段大見出し）: 結論/数字。**核心の数字を1つだけ ●● で伏せる**（最重要の引き。●は全角、必ず2つ）。8〜14字。
-- bubbles（四隅の吹き出し4つ）: 2ch風のツッコミ/意見バトル。各 **4〜9字**（短く！）。各 {text, emph, color}:
-    emph = text 内の強調1語（部分文字列、必ず text に含める）。
-    color = "red"（損失/危険/煽り: 溶かした/退場/養分 等）or "blue"（用語/固有名詞: ロット/新NISA/オルカン 等）。
-- 命令・断定(絶対/必ず/一択)、極端評価(最強/神/優秀ライン)、年齢×金額、固有名詞も効かせる。
+【telops：上下テロップ案（指定数）】互いに型・切り口を変えて被らせない（例：疑問フック／数字の引き／恐怖 vs 夢／逆張り前提／年代直撃／反転オチ）。
+各案 = {aim, top, bottom}:
+- aim: ねらい/型を10字前後（例「疑問→結論」「現金の恐怖」）。
+- top（上段）: 煽り/前提。疑問形も可。8〜14字。
+- bottom（下段）: 結論/数字。**核心の数字を1つだけ ●● で伏せる**（●は全角、必ず2つ）。8〜14字。
 
-【NG語の伏せ字（YouTube規約対策・必須）】暴力/センシティブ語はそのまま使わない。
-- 死ぬ→退場/飛ぶ/溶ける/●ぬ、 殺す→潰す/●す。 金融言い換え: 退場/溶かす/焼かれる/養分/含み損/強制ロスカット。
+【bubbles：吹き出しコメント案（指定数・多め）】四隅に置く2ch風コメント。ユーザーがこの中から4つ選ぶ前提で、被らせず幅広く。
+各 = {text, emph, color}:
+- text: **10〜15字**の"しゃべってる感"のあるコメント（なんJ/2ch風・関西弁可）。**半分くらいは ●● で核心（答え/数字/キーワード）を1つ伏せて引きを作る**（●は全角、必ず2つ）。
+- emph: text 内で色を付ける1語（●● でもよい／無ければ主要語）。color = "red"（損失/危険/煽り: 現金/インフレ/養分/溶ける 等）or "blue"（用語/固有名詞: 有事の金/積立/新NISA/中央銀行 等）。
+
+【NG語の伏せ字（必須）】暴力/センシティブ語はそのまま使わない。死ぬ→退場/飛ぶ/溶ける/●ぬ、殺す→潰す/●す。金融言い換え: 退場/溶かす/焼かれる/養分/含み損。
 """
 
 
-def gen_candidates(title, topics, n=4):
+def gen_lists(title, topics, n_telop=6, n_bubble=14):
     import anthropic
     client = anthropic.Anthropic()
     msg = client.messages.create(
         model="claude-opus-4-8",
-        max_tokens=3000,
+        max_tokens=3500,
         output_config={"format": {"type": "json_schema", "schema": SCHEMA}},
         system=THUMB_SYSTEM,
         messages=[{"role": "user", "content":
                    f"動画タイトル:\n{title}\n\n参考テーマ:\n{topics}\n\n"
-                   f"互いに型の違うサムネ文言案を{n}個、JSONで（各 aim/top/bottom/bubbles4つ）。"}],
+                   f"上下テロップ案を{n_telop}個、吹き出しコメント案(各10〜15字)を{n_bubble}個、JSONで。"}],
     )
     data = json.loads(next(b.text for b in msg.content if b.type == "text"))
-    cands = data.get("candidates", [])[:n]
-    for c in cands:
-        b = (c.get("bubbles") or [])[:4]
-        while len(b) < 4:
-            b.append({"text": "", "emph": "", "color": "red"})
-        c["bubbles"] = b
-    return cands
+    return data.get("telops", [])[:n_telop], data.get("bubbles", [])[:n_bubble]
 
 
-def write_ideas(ep, title, cands, md_path, json_path):
-    circ = "①②③④"
-    lines = [f"# {ep} サムネ候補案（{len(cands)}案）", "", f"元タイトル: {title}", ""]
-    for i, c in enumerate(cands, 1):
-        bubs = " / ".join(f"{circ[j]}{b.get('text', '')}" for j, b in enumerate(c["bubbles"]))
-        lines += [f"## 案{i}（ねらい: {c.get('aim', '')}）",
-                  f"- 上テロップ: {c.get('top', '')}",
-                  f"- 下テロップ: {c.get('bottom', '')}",
-                  f"- 吹き出し: {bubs}", ""]
+def write_ideas(ep, title, telops, bubbles, md_path, json_path):
+    cmap = {"red": "赤", "blue": "青"}
+    lines = [f"# {ep} サムネ文言案", "", f"元タイトル: {title}", "",
+             f"## 上下テロップ案（{len(telops)}案）"]
+    for i, t in enumerate(telops, 1):
+        lines.append(f"{i}.（{t.get('aim', '')}）　上: {t.get('top', '')}　／　下: {t.get('bottom', '')}")
+    lines += ["", f"## 吹き出しコメント案（10〜15字・この中から4つ選ぶ）"]
+    for b in bubbles:
+        emph = b.get("emph", "")
+        tag = f"　（{emph}={cmap.get(b.get('color', ''), '')}）" if emph else ""
+        lines.append(f"- {b.get('text', '')}{tag}")
     open(md_path, "w", encoding="utf-8").write("\n".join(lines))
-    json.dump({"ep": ep, "title": title, "candidates": cands},
+    json.dump({"ep": ep, "title": title, "telops": telops, "bubbles": bubbles},
               open(json_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print("\n".join(lines))
 
@@ -328,9 +324,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ep", required=True)
     ap.add_argument("--script", default=None)
-    ap.add_argument("--n", type=int, default=4, help="候補案の数")
+    ap.add_argument("--telops", type=int, default=6, help="上下テロップ案の数")
+    ap.add_argument("--bubbles", type=int, default=14, help="吹き出しコメント案の数")
     ap.add_argument("--render", type=int, default=None,
-                    help="保存済み候補jsonの案(1始まり)を選んで画像化（任意・手動用）")
+                    help="保存済みjsonのテロップ案(1始まり)＋先頭4吹き出しを画像化（任意・手動用）")
     args = ap.parse_args()
 
     out_dir = os.path.join(ROOT, "out")
@@ -338,13 +335,14 @@ def main():
     md_path = os.path.join(out_dir, f"{args.ep}_thumb_ideas.md")
     json_path = os.path.join(out_dir, f"{args.ep}_thumb_ideas.json")
 
-    # 任意：選んだ候補案を画像に描画（既定フローでは呼ばれない。手動で使う）
+    # 任意：選んだテロップ案＋先頭4吹き出しを画像に描画（既定フローでは呼ばれない。手動用）
     if args.render is not None:
-        cands = json.load(open(json_path, encoding="utf-8"))["candidates"]
-        c = cands[args.render - 1]
+        d = json.load(open(json_path, encoding="utf-8"))
+        t = d["telops"][args.render - 1]
+        c = {"top": t["top"], "bottom": t["bottom"], "bubbles": d["bubbles"][:4]}
         out_png = os.path.join(out_dir, f"{args.ep}_thumb.png")
         build(c, out_png)
-        print(f"done: {out_png}（案{args.render}を画像化）")
+        print(f"done: {out_png}（テロップ案{args.render}＋先頭4吹き出し）")
         return
 
     script = args.script or os.path.join(ROOT, "scripts", f"{args.ep}.txt")
@@ -355,8 +353,8 @@ def main():
             break
     topics = read("out/topics.txt") if os.path.exists(os.path.join(ROOT, "out/topics.txt")) else title
 
-    cands = gen_candidates(title, topics, args.n)
-    write_ideas(args.ep, title, cands, md_path, json_path)
+    telops, bubbles = gen_lists(title, topics, args.telops, args.bubbles)
+    write_ideas(args.ep, title, telops, bubbles, md_path, json_path)
     print(f"done: {md_path}")
 
 

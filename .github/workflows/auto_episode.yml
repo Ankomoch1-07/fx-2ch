@@ -102,10 +102,10 @@ jobs:
           git commit -m "auto: ${EP} 台本を自動生成" || echo "変更なし"
           git push || echo "push skip（権限/競合）"
 
-      - name: サムネ候補案を生成（Opus 4.8。画像は出さず文言案を複数）
+      - name: サムネ文言案を生成（Opus 4.8。上下テロップ案＋吹き出し案を多数）
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python build/gen_thumbnail.py --ep "$EP" --n 5 || echo "候補生成失敗（続行）"
+        run: python build/gen_thumbnail.py --ep "$EP" || echo "文言案生成失敗（続行）"
 
       - name: サムネ候補案をアップロード
         uses: actions/upload-artifact@v4
