@@ -1,0 +1,57 @@
+name: Test YouTube Upload（アップロードだけ検証）
+
+# 直近のAuto Episodeが作った完成mp4(Artifact)を再利用して、YouTubeアップロードだけを試す。
+# レンダしないので数十秒で終わる。失敗理由はマスクせずログに出す。
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: YouTube依存
+        run: python -m pip install --quiet google-api-python-client google-auth
+
+      - name: 直近のepisode-mp4を取得
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RID=$(gh run list --workflow auto_episode.yml --status success -L 20 \
+                --json databaseId -q '.[0].databaseId')
+          echo "最新のAuto Episode run: $RID"
+          gh run download "$RID" -n episode-mp4 -D out
+          ls -la out/*.mp4
+
+      - name: Secrets有無を表示（値は出さない）
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          check() { [ -n "$1" ] && echo "$2: 設定あり(${#1}文字)" || echo "$2: 未設定！"; }
+          check "$YT_CLIENT_ID" YT_CLIENT_ID
+          check "$YT_CLIENT_SECRET" YT_CLIENT_SECRET
+          check "$YT_REFRESH_TOKEN" YT_REFRESH_TOKEN
+
+      - name: アップロード実行（失敗はマスクせず表示）
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_PRIVACY: private
+        run: |
+          F=$(ls out/*.mp4 | head -1)
+          EP=$(basename "$F" .mp4)
+          echo "アップロード対象: $F (ep=$EP)"
+          python build/upload_youtube.py --ep "$EP" --file "$F"
