@@ -21,3 +21,4 @@ remotion/public/bg/grandfather.mp4
 # YouTube OAuth（ローカルのみ・絶対コミットしない）
 client_secret*.json
 token*.json
+yt_secrets.txt
