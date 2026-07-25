@@ -57,8 +57,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Python依存（anthropic/Pillow/Gemini含む）
-        run: python -m pip install --quiet anthropic requests matplotlib japanize-matplotlib pillow google-genai
+      - name: Python依存（anthropic/Pillow/Gemini/YouTube含む）
+        run: python -m pip install --quiet anthropic requests matplotlib japanize-matplotlib pillow google-genai google-api-python-client google-auth
 
       - name: Chrome(Remotion)＋日本語フォント
         run: |
@@ -145,3 +145,11 @@ jobs:
           name: "episode-mp4"
           path: "out/*.mp4"
           retention-days: 14
+
+      - name: YouTubeへ自動アップロード（非公開。YT_* Secrets未設定ならスキップ）
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_PRIVACY: private
+        run: python build/upload_youtube.py --ep "$EP" || echo "YouTubeアップロード失敗（続行）"

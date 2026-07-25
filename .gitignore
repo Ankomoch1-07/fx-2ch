@@ -17,3 +17,7 @@ remotion/public/bg/grandfather.mp4
 # Mac管理ファイル
 .DS_Store
 **/.DS_Store
+
+# YouTube OAuth（ローカルのみ・絶対コミットしない）
+client_secret*.json
+token*.json

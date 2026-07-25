@@ -1,0 +1,29 @@
+"""
+【ローカルで1回だけ実行】YouTube投稿用のリフレッシュトークンを取得する。
+事前準備:
+  1) Google Cloudでプロジェクト作成 → 「YouTube Data API v3」を有効化
+  2) 「OAuth同意画面」を設定（ユーザー種別=外部、テスト ユーザーに自分のGoogleアカウントを追加）
+  3) 認証情報 → OAuthクライアントID → アプリの種類「デスクトップ」→ JSONをダウンロードし
+     このファイルと同じ場所に client_secret.json という名前で置く
+実行:
+  pip install google-auth-oauthlib
+  python3 build/youtube_auth.py            （ブラウザが開くので自分のアカウントで許可）
+出力された YT_CLIENT_ID / YT_CLIENT_SECRET / YT_REFRESH_TOKEN を GitHub Secrets に登録する。
+"""
+import sys
+from google_auth_oauthlib.flow import InstalledAppFlow
+
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+
+secret_file = sys.argv[1] if len(sys.argv) > 1 else "client_secret.json"
+flow = InstalledAppFlow.from_client_secrets_file(secret_file, SCOPES)
+# access_type=offline + prompt=consent でリフレッシュトークンを確実に取得
+creds = flow.run_local_server(port=0, access_type="offline", prompt="consent")
+
+print("\n================ GitHub Secrets に登録 ================")
+print("YT_CLIENT_ID     =", creds.client_id)
+print("YT_CLIENT_SECRET =", creds.client_secret)
+print("YT_REFRESH_TOKEN =", creds.refresh_token)
+print("=====================================================")
+if not creds.refresh_token:
+    print("※refresh_tokenが空の場合：Googleアカウントのアプリ連携を一度解除してから再実行してください。")
