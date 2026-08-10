@@ -14,9 +14,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -26,7 +26,7 @@ jobs:
           python build/check_assets.py scripts/ep02.txt
           python build/qa.py scripts/ep02.txt || echo "QA warnings（PR検証では非致命）"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
 
@@ -47,7 +47,7 @@ jobs:
     steps:
       - name: 更新種別を取得
         id: meta
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
 
       - name: パッチ/マイナーは自動マージ（メジャーは残して手動確認）
         if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' }}
